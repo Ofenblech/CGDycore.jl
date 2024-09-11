@@ -1129,9 +1129,53 @@ function DivMomentum!(backend,FTB,Rhs,uF,uFFe::HDivElement,uC,uCFe::VecDGElement
     end
   end
   
+  GradLoc = zeros(FeT.DoF)
+  uLoc = zeros(uFFe.DoF)
+  uFLoc = zeros(2)
+  KLoc = zeros(NumQuad)
+  uCLoc = zeros(NumQuad)
+  uFGraduCLoc = zeros(NumQuad)
+  DivuFuCLoc = zeros(NumQuad)
 
+  DF = zeros(3,2)
+  detDF = zeros(1)
+  detDFLoc = zeros(NumQuad)
+  pinvDF = zeros(3,2)
+  X = zeros(3)
+  
+  #Schleife über alle Flaechen
+  for iF = 1 : Grid.NumFaces
+    for iQ = 1 : NumQuad
+      #Berechnung Jacobi
+      Jacobi!(DF,detDF,pinvDF,X,Grid.Type,Points[iQ,1],Points[iQ,2],Grid.Faces[iF], Grid)
+      detDFLoc[iQ] = detDF[1]
+      #uF*GraduC
+      for iD = 1 : uFFe.DoF
+        uFGraduCLoc[1,iD,iQ] += uFFe.phi[iD,iComp](-1.0,PointsL[iQ]) * GraduCRef[iComp,iD,1,iQ]
+        uFGraduCLoc[2,iD,iQ] += uFFe.phi[iD,iComp](PointsL[iQ],-1.0) * GraduCRef[iComp,iD,1,iQ]
+      end
+      #FeT
+      for iD = 1 : FeT.DoF
+      fTRefX[1,iD,iQ] = FeT.phi[iD,1](-1.0,PointsL[iQ])
+      end
+      #DivuF*uC
+      for iD = 1 : uCFe.DoF
+        DivuFuCLoc[iComp,iD,1,iQ] = DivuFRef[iComp,iD,1,iQ] * uCFRef[iComp,iD,iQ]
+        DivuFuCLoc[iComp,iD,2,iQ] = DivuFRef[iComp,iD,2,iQ] * uCFRef[iComp,iD,iQ]
+      end
+    end
+    GradLoc[iF] = uFGraduCLoc * DivuFuCLoc
+  #Save the new 
+    for iD = 1 : FeT.DoF
+      ind = FeT.Glob[iD,iF] 
+      Rhs[ind] += detDFLoc*GradLoc[iD]
+    end 
+  end 
 #Kanten
 #=
+
+
+
   NumQuadL, WeightsL, PointsL = QuadRule(Grids.Line(),QuadOrd)
   uFFRefX  = zeros(uFFe.Comp,uFFe.DoF,NumQuadL)
   uFFRefY  = zeros(uFFe.Comp,uFFe.DoF,NumQuadL)
@@ -1176,21 +1220,14 @@ function DivMomentum!(backend,FTB,Rhs,uF,uFFe::HDivElement,uC,uCFe::VecDGElement
     end
   end
 =#
-  GradLoc = zeros(FeT.DoF)
-  uLoc = zeros(uFFe.DoF)
-  uFLoc = zeros(2)
-  KLoc = zeros(NumQuad)
  # KLocX = zeros(NumQuadL)
  # KLocY = zeros(NumQuadL)
-  uCLoc = zeros(NumQuad)
  # uCLocX = zeros(NumQuadL)
  # uCLocY = zeros(NumQuadL)
   #grad
-  GraduCLoc = zeros(NumQuad)
  # GraduCLocX = zeros(NumQuadL)
  # GraduCLocY = zeros(NumQuadL)
   #div
-  DivuFLoc = zeros(NumQuad)
  # DivuFLocX = zeros(NumQuadL)
  # DivuFLocY = zeros(NumQuadL)
 
