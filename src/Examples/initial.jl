@@ -327,39 +327,58 @@ function (profile::LinearBlob)(Param,Phys)
   return local_profile
 end
 
-Base.@kwdef struct BaroWaveDryCart <: Example end
+#Advection
+Base.@kwdef struct Advec <: Example end
 
-function (profile::BaroWaveDryCart)(Param,Phys)
+function (profile::Advec)(Param,Phys)
   function local_profile(x,time)
     FT = eltype(x)
-    u0 = Param.u0
-    Ly = Param.Ly
-    b = Param.b
-    up = Param.up
-    xC = Param.xC
-    yC = Param.yC
-    Lp = Param.Lp
-    p0 = Phys.p0
-    Rd = Phys.Rd
-    Cpd = Phys.Cpd
-    Cvd = Phys.Cvd
-    Grav = Phys.Grav
-    z = x[3]
-    eta = z2Eta(x[1],x[2],x[3],Param,Phys)
-    Temperature = 300.0
-    uC = -u0 * sin(pi * x[2] / Ly)^2 * log(eta) * exp(-(log(eta)/b)^2)
-    uC += up * exp(-((x[1] - xC)^2 + (x[2] - yC)^2)/ Lp^2)
-    vC = 0.0
-    w = 0.0
-    T = TemperatureBaroWaveCart(x[1],x[2],eta,Param,Phys)
-    p = eta * p0
-    Rho = p / (Rd * T)
-    Th = T * (p0 / p)^(Rd / Cpd)
-    E = Cvd * T + FT(0.5) * (uC * uC + vC * vC) + Grav * z
-    return (Rho,uC,vC,w,Th,E)
+    (lon,lat,R) = Grids.cart2sphere(x[1],x[2],x[3])
+    T = Param.T
+    r = Param.r
+    lat0 = Param.lat0
+    lon0 = Param.lon0
+    F0 = Param.F0
+    l0 = Param.l0
+    dtau = 1 #0.05
+    U = (2*pi*r) / T
+    ulat = 0
+    vlon = 0
+    t = time
+    
+    #solid body rotations
+    #distance on sphere
+    l = acos(sind(lon0)*sind(lon)+cosd(lon0)*cosd(lat0)*cosd(lat)+cosd(lon0)*sind(lat0)*sind(lat))
+    
+    #initial condition
+    w = FT(0)
+    Th = FT(1)
+    #Flambda
+    Flat = 0
+    #Ftheta
+    Flon = F0*exp((-l^2)/(l0^2))
+
+    #transporting velocity
+    
+    if 0 <= t && t <= T/2
+      ulat = U*cosd(lon) 
+      vlon = 0
+    elseif T < t && t <= (3/2)*T
+      ulat = U*cosd(lon) 
+      vlon = 0
+    elseif T/2 < t && t <= T
+      ulat = -U*cosd(lat)*sind(lon)
+      vlon = U*sind(lat)*(cosd(lon)^2-sind(lon)^2)
+    else (3/2)*T < t && t <= 2*T
+      ulat = -U*cosd(lat)*sind(lon)
+      vlon = U*sind(lat)*(cosd(lon)^2-sind(lon)^2)
+    end
+    
+    return (l,ulat,vlon,lat,lon)
   end
   return local_profile
 end
+
 
 Base.@kwdef struct BaroWaveExample <: Example end
 
@@ -576,68 +595,4 @@ function simpson(x0,xN,r,dx,f,Param,Phys)
   end
   res=res*h/3.0
   return res
-end
-
-function GeoPotentialDeviation(y,Param)
-
-  u0 = Param.u0
-  f0 = Param.f0
-  beta0 = Param.beta0
-  y0 = Param.y0
-  Ly = Param.Ly
-
-  0.5 * u0 *((f0 + beta0 * y0) * (y - 0.5 * Ly - 0.5 * Ly / pi * sin(2 * pi * y / Ly)) +
-    0.5* beta0 * (y^2 - Ly *y / pi *sin(2 * pi * y / Ly) -
-    0.5 * Ly^2 / pi^2 * cos(2 * pi *y / Ly) - Ly^2 / 3 - 0.5 *Ly^2 / pi^2)) 
-
-end
-
-function GeoPotentialMean(eta,Param,Phys)
-  T0 = Param.T0
-  LapseRate = Param.LapseRate
-  Grav = Phys.Grav
-  Rd = Phys.Rd
-
-  T0 * Grav / LapseRate * (1 - eta^(Rd * LapseRate / Grav))
-end  
-
-function GeoPotentialBaroWaveCart(x,y,eta,Param,Phys)
-  b = Param.b
-
-  GeoM = GeoPotentialMean(eta,Param,Phys)
-  GeoD = GeoPotentialDeviation(y,Param)
-
-  G = GeoM + GeoD * log(eta) * exp(-(log(eta) / b)^2)
-end
-
-function TemperatureMean(eta,Param,Phys)
-  T0 = Param.T0
-  LapseRate = Param.LapseRate
-  Grav = Phys.Grav
-  Rd = Phys.Rd
-
-  T0 * eta^(Rd * LapseRate / Grav)
-end
-
-function TemperatureBaroWaveCart(x,y,eta,Param,Phys)
-  Rd = Phys.Rd
-  b = Param.b
-
-  TMean = TemperatureMean(eta,Param,Phys)
-  GeoD = GeoPotentialDeviation(y,Param)
-
-  T = TMean + GeoD / Rd *(2 / b^2 * log(eta)^2 - 1) * exp(-(log(eta) / b)^2)
-end  
-
-function z2Eta(x,y,z,Param,Phys)
-
-  Eta = 1.e-2
-  for i = 1 : 10
-    F = -Grav * z + GeoPotentialBaroWaveCart(x,y,Eta,Param,Phys)
-    dFdEta = -Rd / Eta * TemperatureBaroWaveCart(x,y,Eta,Param,Phys)
-    Eta = Eta - F / dFdEta
-  end
-
-  return Eta
-
 end

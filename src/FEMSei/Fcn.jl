@@ -59,6 +59,25 @@ function FcnNonLinShallow!(backend,FTB,F,U,Model,Grid,QuadOrdM,QuadOrdS,Jacobi;U
   ldiv!(DG.LUM,Fp)
 end
 
+function FcnAdvection!(backend,FTB,F,U,Model,Grid,QuadOrdM,QuadOrdS,Jacobi;UCache)
+
+  DG = Model.DG
+  RT = Model.RT
+  Div = Model.Div
+  Grad = Model.Grad
+#ToDO
+  @views Up = U[Model.pPosS:Model.pPosE]
+  @views Uu = U[Model.uPosS:Model.uPosE]
+  @views Fp = F[Model.pPosS:Model.pPosE]
+  @views Fu = F[Model.uPosS:Model.uPosE]
+
+  mul!(Fu,Grad,Up)
+  ldiv!(RT.LUM,Fu)
+
+  mul!(Fp,Div,Uu)
+  ldiv!(DG.LUM,Fp)
+end
+
 function Curl!(backend,FTB,uCurl,DG,Uu,RT,ND,Grid,Jacobi,QuadOrdM,Curl,UCacheu)
   ProjectHDivHCurl!(backend,FTB,UCacheu,ND,Uu,RT,
     Grid,RT.Type,QuadOrdM,Jacobi)

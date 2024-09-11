@@ -95,7 +95,7 @@ FloatTypeBackend = parsed_args["FloatTypeBackend"]
 NumberThreadGPU = parsed_args["NumberThreadGPU"]
 
 MPI.Init()
-Flat = true #testen
+Flat = false #testen
 Device = "CPU"
 FloatTypeBackend = "Float64"
 
@@ -151,12 +151,14 @@ nLat = 0
 nLon = 0
 LatB = 0.0
 
+#Quad
 GridType = "CubedSphere"
 
 print("Which Problem do you want so solve? \n")
 print("1 - GalewskiSphere\n\
        2 - HaurwitzSphere\n\
-       3 - LinearBlob\n")
+       3 - LinearBlob\n\
+       4 - Advection\n")
 text = readline() 
 a = parse(Int,text)
 if  a == 1
@@ -180,6 +182,13 @@ elseif  a == 3
     nAdveVel = 100
     GridTypeOut = GridType*"NonLinShallowBlob"
     @show nAdveVel
+elseif  a == 4
+    Problem = "Advection"
+    RadEarth = 1.0
+    dtau = 0.05 #in s
+    nAdveVel = 1
+    GridTypeOut = GridType*"Advec"
+    @show nAdveVel
 else 
     print("Error")
 end
@@ -187,36 +196,57 @@ println("The chosen Problem is ")
 Param = Examples.Parameters(FTB,Problem)
 Examples.InitialProfile!(Model,Problem,Param,Phys)
 
+#Gitterkonstruktion
 Grid, Exchange = Grids.InitGridSphere(backend,FTB,OrdPoly,nz,nPanel,RefineLevel,nLat,nLon,LatB,GridType,Decomp,RadEarth,
-  Model,ParallelCom) #gitterbau
+  Model,ParallelCom)
 
+#Finite Elemente
 VecDG = FEMSei.VecDG0Struct{FTB}(Grids.Quad(),backend,Grid)
-@show typeof(VecDG)
 DG = FEMSei.DG0Struct{FTB}(Grids.Quad(),backend,Grid)
 RT = FEMSei.RT0Struct{FTB}(Grids.Quad(),backend,Grid)
 
-
-VecDG.M = FEMSei.MassMatrix(backend,FTB,VecDG,Grid,nQuadM,FEMSei.Jacobi!)
+#Massematrix und LU-Zerlegung
+VecDG.M = FEMSei.MassMatrix(backend,FTB,VecDG,Grid,nQuadM,FEMSei.Jacobi!) 
 VecDG.LUM = lu(VecDG.M)
 DG.M = FEMSei.MassMatrix(backend,FTB,DG,Grid,nQuadM,FEMSei.Jacobi!)
 DG.LUM = lu(DG.M)
 RT.M = FEMSei.MassMatrix(backend,FTB,RT,Grid,nQuadM,FEMSei.Jacobi!)
 RT.LUM = lu(RT.M)
 
+
+VelCa = zeros(Grid.NumFaces,Grid.Dim)
+VelSp = zeros(Grid.NumFaces,2)
+#skalares Höhenfeld
 h = zeros(FTB,DG.NumG)
+#Geschwindigkeitsfeld in HDiv-Form
 hu = zeros(FTB,RT.NumG)
-uDG = zeros(FTB,VecDG.NumG)
-FEMSei.ProjectScalar!(backend,FTB,hu,RT,Grid,nQuad,FEMSei.Jacobi!,Model.InitialProfile)
+u = zeros(FTB,RT.NumG)
+uDG = zeros(FTB,VecDG.NumG) 
+
+#Berechnung von u
+FEMSei.Project!(backend,FTB,u,RT,Grid,nQuad,FEMSei.Jacobi!,Model.InitialProfile) 
+#Berechnung von h
 FEMSei.Project!(backend,FTB,h,DG,Grid,nQuad,FEMSei.Jacobi!,Model.InitialProfile)
+FEMSei.ConvertVelocitySp!(backend,FTB,VelSp,u,RT,Grid,FEMSei.Jacobi!)
+#Ausgabe von h und u
+vtkSkeletonMesh = Outputs.vtkStruct{Float64}(backend,Grid,Grid.NumFaces,Flat)
+FileNumber=1000
+Outputs.vtkSkeleton!(vtkSkeletonMesh, GridType, Proc, ProcNumber, [h VelSp], FileNumber)
+#Berechnung von hu
+FEMSei.ProjecthScalaruHDivHDiv!(backend,FTB,hu,RT,h,DG,u,RT,Grid,Grids.Quad(),nQuadS,FEMSei.Jacobi!)
+FEMSei.ConvertVelocitySp!(backend,FTB,VelSp,hu,RT,Grid,FEMSei.Jacobi!)
+#Ausgabe von hu
+FileNumber=1001
+Outputs.vtkSkeleton!(vtkSkeletonMesh, GridType, Proc, ProcNumber, [h VelSp], FileNumber)
 
 FEMSei.ProjectVectorScalarVectorHDiv(backend,FTB,uDG,VecDG,h,DG,hu,RT,Grid,Grids.Quad(),nQuadS,FEMSei.Jacobi!)
-VelCa = zeros(Grid.NumFaces,Grid.Dim)
+
 FEMSei.ConvertVelocityCart!(backend,FTB,VelCa,uDG,VecDG,Grid,FEMSei.Jacobi!)
-VelSp = zeros(Grid.NumFaces,2)
-FEMSei.ConvertVelocitySp!(backend,FTB,VelSp,uDG,VecDG,Grid,FEMSei.Jacobi!)
-vtkSkeletonMesh = Outputs.vtkStruct{Float64}(backend,Grid,Grid.NumFaces,Flat)
+
+FEMSei.ConvertVelocitySp!(backend,FTB,VelSp,uDG,VecDG,Grid,FEMSei.Jacobi!) #todo
 @show size(h), size(VelCa), size(VelSp)
-FileNumber=1000
+#Ausgabe von uDG
+FileNumber=1002
 Outputs.vtkSkeleton!(vtkSkeletonMesh, GridType, Proc, ProcNumber, [h VelCa VelSp], FileNumber)
 
 stop
