@@ -1088,241 +1088,94 @@ function CrossRhs!(backend,FTB,Cross,q,qFeF::ScalarElement,u,uFeF::HDivElement,F
   end
 end
 
-#rechte Seite (38) in Oswald&Denise
-function DivMomentum!(backend,FTB,Rhs,uF,uFFe::HDivElement,uC,uCFe::VecDGElement,FeT::HDivElement,Grid,
+function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::VectorElement,FeTHDiv::HDivElement,Grid,
   ElemType::Grids.ElementType,QuadOrd,Jacobi)
+
   NumQuad, Weights, Points = QuadRule(ElemType,QuadOrd)
-  uFFRef  = zeros(FeT.Comp,uFFe.DoF,NumQuad)
-  uCFRef  = zeros(FeT.Comp,uCFe.DoF,NumQuad)
-  FeTRef  = zeros(FeT.Comp,FeT.DoF,NumQuad)
-  DivuFRef = zeros(FeT.Comp,FeT.DoF,2,NumQuad)
-  GraduCRef = zeros(FeT.Comp,FeT.DoF,2,NumQuad)
+  fuHDiv  = zeros(FeTHDiv.Comp,FeHDiv.DoF,NumQuad)
+  fuVecDG  = zeros(FeTHDiv.Comp,FeVecDG.DoF,NumQuad)
+  fuTHDiv  = zeros(FeTHDiv.Comp,FeTHDiv.DoF,NumQuad)
+  fuDivHDiv = zeros(FeTHDiv.Comp,FeTHDiv.DoF,2,NumQuad)
+  fuGradVecDG = zeros(FeTHDiv.Comp,FeTHDiv.DoF,2,NumQuad)
 
-#Schleifen über die 5 zu berechnenden Größen
+  # Computation of the ansatz functions in the quadrature points
   for iQ = 1 : NumQuad
-    for iComp = 1 : FeT.Comp
-      for iD = 1 : FeT.DoF
-        fTRef[iComp,iD,iQ] = FeT.phi[iD,iComp](Points[iQ,1],Points[iQ,2])
+    for iComp = 1 : FeTHDiv.Comp
+      for iD = 1 : FeTHDiv.DoF
+        fuTHDiv[iComp,iD,iQ] = FeTHDiv.phi[iD,iComp](Points[iQ,1],Points[iQ,2])
       end
     end
-    for iComp = 1 : FeT.Comp
-      for iD = 1 : uFFe.DoF
-        uFFRef[iComp,iD,iQ] = uFFe.phi[iD,iComp](Points[iQ,1],Points[iQ,2])
+    for iComp = 1 : FeTHDiv.Comp
+      for iD = 1 : FeHDiv.DoF
+        fuHDiv[iD,iComp,iQ] = FeHDiv.phi[iD,iComp](Points[iQ,1],Points[iQ,2])
       end
     end
-    for iComp = 1 : FeT.Comp
-      for iD = 1 : uCFe.DoF
-        uCFRef[iComp,iD,iQ] = uCFe.phi[iD,iComp](Points[iQ,1],Points[iQ,2])
+    for iComp = 1 : FeTHDiv.Comp
+      for iD = 1 : FeVecDG.DoF
+        fuVecDG[iD,iComp,iQ] = FeVecDG.phi[iD,iComp](Points[iQ,1],Points[iQ,2])
       end
     end
-    for iComp = 1 : FeT.Comp
-      for iD = 1 : uCFe.DoF
-        DivuFRef[iComp,iD,1,iQ] = uFFe.Divphi[iD,iComp,1](Points[iQ,1],Points[iQ,2])
-        DivuFRef[iComp,iD,2,iQ] = uFFe.Divphi[iD,iComp,2](Points[iQ,1],Points[iQ,2])
+    for iComp = 1 : FeTHDiv.Comp
+      for iD = 1 : FeVecDG.DoF
+        fuDivHDiv[iD,iComp,1,iQ] = FeHDiv.Divphi[iD,iComp,1](Points[iQ,1],Points[iQ,2])
+        fuDivHDiv[iD,iComp,2,iQ] = FeHDiv.Divphi[iD,iComp,2](Points[iQ,1],Points[iQ,2])
       end
     end
-    for iComp = 1 : FeT.Comp
-      for iD = 1 : uCFe.DoF
-        GraduCRef[iComp,iD,1,iQ] = uCFe.Gradphi[iD,iComp,1](Points[iQ,1],Points[iQ,2])
-        GraduCRef[iComp,iD,2,iQ] = uCFe.Gradphi[iD,iComp,2](Points[iQ,1],Points[iQ,2])
+    for iComp = 1 : FeTHDiv.Comp
+      for iD = 1 : FeVecDG.DoF
+        fuGradVecDG[iD,iComp,1,iQ] = FeVecDG.Gradphi[iD,iComp,1](Points[iQ,1],Points[iQ,2])
+        fuGradVecDG[iD,iComp,2,iQ] = FeVecDG.Gradphi[iD,iComp,2](Points[iQ,1],Points[iQ,2])
       end
     end
   end
-  
-  GradLoc = zeros(FeT.DoF)
-  uLoc = zeros(uFFe.DoF)
-  uFLoc = zeros(2)
-  KLoc = zeros(NumQuad)
-  uCLoc = zeros(NumQuad)
-  uFGraduCLoc = zeros(NumQuad)
-  DivuFuCLoc = zeros(NumQuad)
 
-  DF = zeros(3,2)
-  detDF = zeros(1)
-  detDFLoc = zeros(NumQuad)
-  pinvDF = zeros(3,2)
-  X = zeros(3)
-  
-  #Schleife über alle Flaechen
+  # Local variables
+  uVecDGLoc = zeros(FeVecDG.DoF)
+  uHDivLoc = zeros(FeHDiv.DoF)
+  RhsLoc = zeros(FeHDiv.DoF)
+
+  uuVecDGLoc = zeros(3)
+  uuGradVecDGLoc = zeros(3,2)
+  uuHDivLoc = zeros(2)
+  uuDivHDivLoc = 0.0
+
   for iF = 1 : Grid.NumFaces
-    for iQ = 1 : NumQuad
-      #Berechnung Jacobi
-      Jacobi!(DF,detDF,pinvDF,X,Grid.Type,Points[iQ,1],Points[iQ,2],Grid.Faces[iF], Grid)
-      detDFLoc[iQ] = detDF[1]
-      #uF*GraduC
-      for iD = 1 : uFFe.DoF
-        uFGraduCLoc[1,iD,iQ] += uFFe.phi[iD,iComp](-1.0,PointsL[iQ]) * GraduCRef[iComp,iD,1,iQ]
-        uFGraduCLoc[2,iD,iQ] += uFFe.phi[iD,iComp](PointsL[iQ],-1.0) * GraduCRef[iComp,iD,1,iQ]
-      end
-      #FeT
-      for iD = 1 : FeT.DoF
-      fTRefX[1,iD,iQ] = FeT.phi[iD,1](-1.0,PointsL[iQ])
-      end
-      #DivuF*uC
-      for iD = 1 : uCFe.DoF
-        DivuFuCLoc[iComp,iD,1,iQ] = DivuFRef[iComp,iD,1,iQ] * uCFRef[iComp,iD,iQ]
-        DivuFuCLoc[iComp,iD,2,iQ] = DivuFRef[iComp,iD,2,iQ] * uCFRef[iComp,iD,iQ]
-      end
+    # Copy from global variables to local variables  
+    for iD = 1 : FeVecDG.DoF
+      ind = FeVecDG.Glob[iD,iF]  
+      uVecDGLoc[iD] = uVecDG[ind]
+    end  
+    for iD = 1 : FeHDiv.DoF
+      ind = FeHDiv.Glob[iD,iF]  
+      uHDivLoc[iD] = uHDiv[ind]
+    end  
+  @. RhsLoc = 0.0
+
+  for iQ = 1 : NumQuad
+    #Computation of Jacobi
+    Jacobi!(DF,detDF,pinvDF,X,Grid.Type,Points[iQ,1],Points[iQ,2],Grid.Faces[iF], Grid)
+    detDFLoc[iQ] = detDF[1]
+    @.uuVecDGLoc = 0.0
+    # Computation of local variables in a quadrature point
+    for iD = 1 : FeVecDG.DoF
+      @. @views uuVecDGLoc += uVecDGLoc[iD] * fuVecDG[iD,iComp,iQ]
+      @. @views uuGradVecDGLoc += uGradVecDGLoc[iD] * fuGradVecDG[iD,iComp,1,iQ] 
     end
-    GradLoc[iF] = uFGraduCLoc * DivuFuCLoc
+    for iD = 1 : FeHDiv.DoF
+      @. @views uuHDivLoc += uHDivLoc[iD] * fuHDiv[iD,iComp,iQ]
+      @views uuDivHDivLoc += uDivHDivLoc[iD] * fuDivHDiv[iD,iComp,1,iQ]  
+    end
+    sizeof(uuVecDGLoc)
+    #Product incoming functions and test function
+    for iD = 1 : FeT.DoF
+      RhsLoc[iD] += Grid.Faces[iF].Orientation * detDFLoc[iD] * (uuDivLoc[iD] * uuGradVecDGLoc[iD] + uuDivHDivLoc[iD] * uuVecDGLoc[iD]) * fuTHDiv[iD,iComp,iQ]
+    end
+  end
+
   #Save the new 
-    for iD = 1 : FeT.DoF
-      ind = FeT.Glob[iD,iF] 
-      Rhs[ind] += detDFLoc*GradLoc[iD]
-    end 
-  end 
-#Kanten
-#=
-
-
-
-  NumQuadL, WeightsL, PointsL = QuadRule(Grids.Line(),QuadOrd)
-  uFFRefX  = zeros(uFFe.Comp,uFFe.DoF,NumQuadL)
-  uFFRefY  = zeros(uFFe.Comp,uFFe.DoF,NumQuadL)
-  uCFRefX  = zeros(uCFe.Comp,uCFe.DoF,NumQuadL)
-  uCFRefY  = zeros(uCFe.Comp,uCFe.DoF,NumQuadL)
-  fTRefX  = zeros(uCFe.Comp,FeT.DoF,NumQuadL)
-  fTRefY  = zeros(uCFe.Comp,FeT.DoF,NumQuadL)
-#Gradienten
-  DivuFRefX  = zeros(uFFe.Comp,FeT.DoF,NumQuadL)
-  DivuFRefY  = zeros(uFFe.Comp,FeT.DoF,NumQuadL)
-  GraduCRefX  = zeros(uCFe.Comp,FeT.DoF,NumQuadL)
-  GraduCRefY  = zeros(uCFe.Comp,FeT.DoF,NumQuadL)
-
-#für alle Kanten X&Y Paare
-  for iQ = 1 : NumQuadL
-    #FeT
-    for iD = 1 : FeT.DoF
-      fTRefX[1,iD,iQ] = FeT.phi[iD,1](-1.0,PointsL[iQ])
-      fTRefY[1,iD,iQ] = FeT.phi[iD,2](PointsL[iQ],-1.0)
-    end
-    #uF
-    for iComp = 1 : uFFe.Comp
-      for iD = 1 : uFFe.DoF
-        uFFRefX[iComp,iD,iQ] = uFFe.phi[iD,iComp](-1.0,PointsL[iQ])
-        uFFRefY[iComp,iD,iQ] = uFFe.phi[iD,iComp](PointsL[iQ],-1.0)
-      end  
-    end
-    #uC
-    for iD = 1 : uCFe.DoF
-      uCFRefX[1,iD,iQ] = uCFe.phi[iD,1](-1.0,PointsL[iQ])
-      uCFRefY[1,iD,iQ] = uCFe.phi[iD,1](PointsL[iQ],-1.0)
-    end
-    #Div
-    for iD = 1 : FeT.DoF
-      DivuFRefX[1,iD,iQ] = uFFe.Divphi[iD,1](-1.0,PointsL[iQ])
-      DivuFRefY[1,iD,iQ] = uFFe.Divphi[iD,2](PointsL[iQ],-1.0)
-    end
-    #Grad
-    for iD = 1 : FeT.DoF
-      GraduCRefX[1,iD,iQ] = ucFe.Divphi[iD,1](-1.0,PointsL[iQ])
-      GraduCRefY[1,iD,iQ] = ucFe.Divphi[iD,2](PointsL[iQ],-1.0)
-    end
-  end
-=#
- # KLocX = zeros(NumQuadL)
- # KLocY = zeros(NumQuadL)
- # uCLocX = zeros(NumQuadL)
- # uCLocY = zeros(NumQuadL)
-  #grad
- # GraduCLocX = zeros(NumQuadL)
- # GraduCLocY = zeros(NumQuadL)
-  #div
- # DivuFLocX = zeros(NumQuadL)
- # DivuFLocY = zeros(NumQuadL)
-
-  DF = zeros(3,2)
-  detDF = zeros(1)
-  detDFLoc = zeros(NumQuad)
-  pinvDF = zeros(3,2)
-  X = zeros(3)
-
-  #ueber alle Flächen
-  @inbounds for iF = 1 : Grid.NumFaces
-    @. GradLoc = 0
-  #=
-    @. GraduCLoc = 0
-    @. GraduCLocX = 0
-    @. GraduCLocY = 0
-    @. DivuFLoc = 0
-    @. DivuFLocX = 0
-    @. DivuFLocY = 0
-  =#
-    @. uCLoc = 0
-    @. UCLocX = 0
-    @. uCLocY = 0
-    for iDoFuFFe = 1 : uFFe.DoF
-      ind = uFFe.Glob[iDoFuFFe,iF]  
-      uLoc[iDoFuFFe] = u[ind]
-    end  
-    for iQ = 1 : NumQuad
-      Jacobi!(DF,detDF,pinvDF,X,Grid.Type,Points[iQ,1],Points[iQ,2],Grid.Faces[iF], Grid)
-      detDFLoc[iQ] = detDF[1]
-      @. uFLoc = 0
-      for iDoFuFFe = 1 : uFFe.DoF
-        uFLoc[1] += uFFRef[1,iDoFuFFe,iQ] * uLoc[iDoFuFFe]
-        uFLoc[2] += uFFRef[2,iDoFuFFe,iQ] * uLoc[iDoFuFFe]
-      end
-      u1 = (DF[1,1] * uFLoc[1] + DF[1,2] * uFLoc[2]) / detDFLoc[iQ]
-      u2 = (DF[2,1] * uFLoc[1] + DF[2,2] * uFLoc[2]) / detDFLoc[iQ]
-      KLoc[iQ] = 0.5 * (u1 * u1 + u2 * u2)
-    end 
-    #uF
-    #Kante 
-    #=
-    for iQ = 1 : NumQuadL
-      Jacobi!(DF,detDF,pinvDF,X,Grid.Type,-1.0,Points[iQ,2],Grid.Faces[iF], Grid)
-      @. uFLoc = 0
-      for iDoFuFFe = 1 : uFFe.DoF
-        uFLoc[1] += uFFRefX[1,iDoFuFFe,iQ] * uLoc[iDoFuFFe]
-        uFLoc[2] += uFFRefX[2,iDoFuFFe,iQ] * uLoc[iDoFuFFe]
-      end
-      u1 = (DF[1,1] * uFLoc[1] + DF[1,2] * uFLoc[2]) / detDF[1]
-      u2 = (DF[2,1] * uFLoc[1] + DF[2,2] * uFLoc[2]) / detDF[1]
-      KLocX[iQ] = 0.5 * (u1 * u1 + u2 * u2)
-      Jacobi!(DF,detDF,pinvDF,X,Grid.Type,Points[iQ,1],-1.0,Grid.Faces[iF], Grid)
-      @. uFLoc = 0
-      for iDoFuFFe = 1 : uFFe.DoF
-        uFLoc[1] += uFFRefY[1,iDoFuFFe,iQ] * uLoc[iDoFuFFe]
-        uFLoc[2] += uFFRefY[2,iDoFuFFe,iQ] * uLoc[iDoFuFFe]
-      end
-      u1 = (DF[1,1] * uFLoc[1] + DF[1,2] * uFLoc[2]) / detDF[1]
-      u2 = (DF[2,1] * uFLoc[1] + DF[2,2] * uFLoc[2]) / detDF[1]
-      KLocY[iQ] = 0.5 * (u1 * u1 + u2 * u2)
-    end  
-    =#
-    #uC 
-    for iDoFuCFe = 1 : uCFe.DoF
-      ind = uCFe.Glob[iDoFuCFe,iF]  
-      for iQ = 1 : NumQuad
-        uCLoc[iQ] += uCFRef[1,iDoFuCFe,iQ] * h[ind]
-      end  
-      #=
-      for iQ = 1 : NumQuadL
-        uCLocX[iQ] += uCFRefX[1,iDoFuCFe,iQ] * h[ind]
-        uCLocY[iQ] += uCFRefY[1,iDoFuCFe,iQ] * h[ind]
-      end 
-      =# 
-    end 
-    #FeT  
-    for iQ = 1 : NumQuad
-      for iDoFFeT = 1 : FeT.DoF
-        GradLoc[iDoFFeT] +=  Grid.Faces[iF].Orientation * Weights[iQ] * fTRef[1,iDoFFeT,iQ] * (uCLoc[iQ] + KLoc[iQ])
-      end
-    end
-    #Kante
-    #=
-    for iQ = 1 : NumQuadL
-      for iDoFFeT = 1 : FeT.DoF
-        GradLoc[iDoFFeT] +=  WeightsL[iQ] * (fTRefX[1,iDoFFeT,iQ] * (uCLocX[iQ] + KLocX[iQ]) +
-          fTRefY[1,iDoFFeT,iQ] * (uCLocY[iQ] + KLocY[iQ]))
-      end
-    end  
-    =# 
-    for iDoFFeT = 1 : FeT.DoF
-      ind = FeT.Glob[iDoFFeT,iF]
-      Grad[ind] += GradLoc[iDoFFeT]
-    end
-  end
+  for iD = 1 : FeT.DoF
+    ind = FeT.Glob[iD,iF] 
+    Rhs[ind] += RhsLoc[iD]
+  end  
+end  
 end
-

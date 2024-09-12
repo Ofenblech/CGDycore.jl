@@ -204,7 +204,12 @@ Grid, Exchange = Grids.InitGridSphere(backend,FTB,OrdPoly,nz,nPanel,RefineLevel,
 VecDG = FEMSei.VecDG0Struct{FTB}(Grids.Quad(),backend,Grid)
 DG = FEMSei.DG0Struct{FTB}(Grids.Quad(),backend,Grid)
 RT = FEMSei.RT0Struct{FTB}(Grids.Quad(),backend,Grid)
+Rhs = zeros(FTB,RT.NumG)
+uHDiv = zeros(FTB,RT.NumG)
+uVecDG = zeros(FTB,VecDG.NumG)
+FEMSei.DivMomentum!(backend,FTB,Rhs,uHDiv,RT,uVecDG,VecDG,RT,Grid,Grids.Quad(),nQuad,FEMSei.Jacobi!)
 
+  stop
 #Massematrix und LU-Zerlegung
 VecDG.M = FEMSei.MassMatrix(backend,FTB,VecDG,Grid,nQuadM,FEMSei.Jacobi!) 
 VecDG.LUM = lu(VecDG.M)
