@@ -1092,17 +1092,17 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
   ElemType::Grids.ElementType,QuadOrd,Jacobi)
 
   NumQuad, Weights, Points = QuadRule(ElemType,QuadOrd)
-  fuHDiv  = zeros(FeTHDiv.Comp,FeHDiv.DoF,NumQuad)
-  fuVecDG  = zeros(FeTHDiv.Comp,FeVecDG.DoF,NumQuad)
-  fuTHDiv  = zeros(FeTHDiv.Comp,FeTHDiv.DoF,NumQuad)
-  fuDivHDiv = zeros(FeTHDiv.Comp,FeTHDiv.DoF,2,NumQuad)
-  fuGradVecDG = zeros(FeTHDiv.Comp,FeTHDiv.DoF,2,NumQuad)
+  fuHDiv  = zeros(FeHDiv.DoF,FeTHDiv.Comp,NumQuad)
+  fuVecDG  = zeros(FeVecDG.DoF,FeTHDiv.Comp,NumQuad)
+  fuTHDiv  = zeros(FeTHDiv.DoF,FeTHDiv.Comp,NumQuad)
+  fuDivHDiv = zeros(FeHDiv.DoF,FeTHDiv.Comp,NumQuad)
+  fuGradVecDG = zeros(FeVecDG.DoF,FeTHDiv.Comp,2,NumQuad)
 
   # Computation of the ansatz functions in the quadrature points
   for iQ = 1 : NumQuad
     for iComp = 1 : FeTHDiv.Comp
       for iD = 1 : FeTHDiv.DoF
-        fuTHDiv[iComp,iD,iQ] = FeTHDiv.phi[iD,iComp](Points[iQ,1],Points[iQ,2])
+        fuTHDiv[iD,iComp,iQ] = FeTHDiv.phi[iD,iComp](Points[iQ,1],Points[iQ,2])
       end
     end
     for iComp = 1 : FeTHDiv.Comp
@@ -1116,9 +1116,8 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
       end
     end
     for iComp = 1 : FeTHDiv.Comp
-      for iD = 1 : FeVecDG.DoF
-        fuDivHDiv[iD,iComp,1,iQ] = FeHDiv.Divphi[iD,iComp,1](Points[iQ,1],Points[iQ,2])
-        fuDivHDiv[iD,iComp,2,iQ] = FeHDiv.Divphi[iD,iComp,2](Points[iQ,1],Points[iQ,2])
+      for iD = 1 : FeHDiv.DoF
+        fuDivHDiv[iD,iComp,iQ] = FeHDiv.Divphi[iD,1](Points[iQ,1],Points[iQ,2])
       end
     end
     for iComp = 1 : FeTHDiv.Comp
@@ -1150,7 +1149,11 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
       uHDivLoc[iD] = uHDiv[ind]
     end  
   @. RhsLoc = 0.0
-
+  DF = zeros(3,2)
+  detDF = zeros(1)
+  pinvDF = zeros(3,2)
+  X = zeros(3)
+  detDFLoc = zeros(1)
   for iQ = 1 : NumQuad
     #Computation of Jacobi
     Jacobi!(DF,detDF,pinvDF,X,Grid.Type,Points[iQ,1],Points[iQ,2],Grid.Faces[iF], Grid)
@@ -1158,17 +1161,28 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
     @.uuVecDGLoc = 0.0
     # Computation of local variables in a quadrature point
     for iD = 1 : FeVecDG.DoF
-      @. @views uuVecDGLoc += uVecDGLoc[iD] * fuVecDG[iD,iComp,iQ]
-      @. @views uuGradVecDGLoc += uGradVecDGLoc[iD] * fuGradVecDG[iD,iComp,1,iQ] 
+      for iComp = 1 : FeTHDiv.Comp
+        for i = 1 : 2
+          @. @views uuVecDGLoc += uVecDGLoc[iD] * fuVecDG[iD,iComp,iQ]
+          @. @views uuGradVecDGLoc += fuGradVecDG[iD,iComp,i,iQ] 
+        end
+      end
     end
     for iD = 1 : FeHDiv.DoF
+      for iComp = 1 : FeTHDiv.Comp
       @. @views uuHDivLoc += uHDivLoc[iD] * fuHDiv[iD,iComp,iQ]
-      @views uuDivHDivLoc += uDivHDivLoc[iD] * fuDivHDiv[iD,iComp,1,iQ]  
+      @views uuDivHDivLoc += uHDivLoc[iD] * fuDivHDiv[iD,1,iQ]  
+      end
     end
-    sizeof(uuVecDGLoc)
+    @show (sizeof(uuVecDGLoc))
+    @show uuHDivLoc
+    @show (sizeof(uuGradVecDGLoc))
+    @show (sizeof(uuHDivLoc))
+    @show (sizeof(uuDivHDivLoc))
+    stop
     #Product incoming functions and test function
-    for iD = 1 : FeT.DoF
-      RhsLoc[iD] += Grid.Faces[iF].Orientation * detDFLoc[iD] * (uuDivLoc[iD] * uuGradVecDGLoc[iD] + uuDivHDivLoc[iD] * uuVecDGLoc[iD]) * fuTHDiv[iD,iComp,iQ]
+    for iD = 1 : FeTHDiv.DoF
+      RhsLoc[iD] += Grid.Faces[iF].Orientation * detDFLoc[iD] * (uuHDivLoc[iD] * 1 + uuDivHDivLoc[iD] * uuVecDGLoc[iD]) * fuTHDiv
     end
   end
 

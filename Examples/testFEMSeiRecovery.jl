@@ -204,6 +204,8 @@ Grid, Exchange = Grids.InitGridSphere(backend,FTB,OrdPoly,nz,nPanel,RefineLevel,
 VecDG = FEMSei.VecDG0Struct{FTB}(Grids.Quad(),backend,Grid)
 DG = FEMSei.DG0Struct{FTB}(Grids.Quad(),backend,Grid)
 RT = FEMSei.RT0Struct{FTB}(Grids.Quad(),backend,Grid)
+
+#test Stiffmatrix
 Rhs = zeros(FTB,RT.NumG)
 uHDiv = zeros(FTB,RT.NumG)
 uVecDG = zeros(FTB,VecDG.NumG)
