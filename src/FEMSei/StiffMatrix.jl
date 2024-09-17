@@ -1201,7 +1201,7 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
       #First Test RhsLoc Bachelor Denise
       for iD = 1 : FeTHDiv.DoF
         for iComp = 1 : FeTHDiv.Comp
-          RhsLoc[iD] +=  (1/detDFLoc[iD]) * Grid.Faces[iF].Orientation * (transuuGradVecDGLoc[iComp,:] * transuuHDivLoc[iComp]) + (uuDivHDivLoc * transuuVecDGLoc[iComp]) * pinvDF * fuTHDiv[iComp,:,:]
+          RhsLoc[iD] +=  (1/detDFLoc[iD]) * Grid.Faces[iF].Orientation * (transuuHDivLoc[iComp] * transuuGradVecDGLoc[iComp,:]) + (transuuVecDGLoc[iComp] * uuDivHDivLoc) * pinvDF * fuTHDiv[iComp,:,:]
         end
       end 
     end
