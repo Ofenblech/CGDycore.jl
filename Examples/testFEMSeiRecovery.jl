@@ -205,13 +205,6 @@ VecDG = FEMSei.VecDG0Struct{FTB}(Grids.Quad(),backend,Grid)
 DG = FEMSei.DG0Struct{FTB}(Grids.Quad(),backend,Grid)
 RT = FEMSei.RT0Struct{FTB}(Grids.Quad(),backend,Grid)
 
-#test Stiffmatrix
-Rhs = zeros(FTB,RT.NumG)
-uHDiv = zeros(FTB,RT.NumG)
-uVecDG = zeros(FTB,VecDG.NumG)
-FEMSei.DivMomentum!(backend,FTB,Rhs,uHDiv,RT,uVecDG,VecDG,RT,Grid,Grids.Quad(),nQuad,FEMSei.Jacobi!)
-
-  stop
 #Massematrix und LU-Zerlegung
 VecDG.M = FEMSei.MassMatrix(backend,FTB,VecDG,Grid,nQuadM,FEMSei.Jacobi!) 
 VecDG.LUM = lu(VecDG.M)
@@ -220,6 +213,13 @@ DG.LUM = lu(DG.M)
 RT.M = FEMSei.MassMatrix(backend,FTB,RT,Grid,nQuadM,FEMSei.Jacobi!)
 RT.LUM = lu(RT.M)
 
+#test Stiffmatrix
+Rhs = zeros(FTB,RT.NumG)
+uHDiv = zeros(FTB,RT.NumG)
+uVecDG = zeros(FTB,VecDG.NumG)
+FEMSei.DivMomentum!(backend,FTB,Rhs,uHDiv,RT,uVecDG,VecDG,RT,Grid,Grids.Quad(),nQuad,FEMSei.Jacobi!)
+
+  stop
 
 VelCa = zeros(Grid.NumFaces,Grid.Dim)
 VelSp = zeros(Grid.NumFaces,2)
@@ -232,6 +232,8 @@ uDG = zeros(FTB,VecDG.NumG)
 
 #Berechnung von u
 FEMSei.Project!(backend,FTB,u,RT,Grid,nQuad,FEMSei.Jacobi!,Model.InitialProfile) 
+
+
 #Berechnung von h
 FEMSei.Project!(backend,FTB,h,DG,Grid,nQuad,FEMSei.Jacobi!,Model.InitialProfile)
 FEMSei.ConvertVelocitySp!(backend,FTB,VelSp,u,RT,Grid,FEMSei.Jacobi!)
