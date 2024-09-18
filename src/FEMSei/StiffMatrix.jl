@@ -1095,7 +1095,7 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
   fuHDiv  = zeros(FeHDiv.DoF,FeTHDiv.Comp,NumQuad)
   fuVecDG  = zeros(FeVecDG.DoF,FeTHDiv.Comp,NumQuad)
   fuTHDiv  = zeros(FeTHDiv.DoF,FeTHDiv.Comp,NumQuad)
-  fuDivHDiv = zeros(FeHDiv.DoF,FeTHDiv.Comp,NumQuad)
+  fuDivHDiv = zeros(FeHDiv.DoF,NumQuad)
   fuGradVecDG = zeros(FeVecDG.DoF,FeTHDiv.Comp,2,NumQuad)
 
   #Computation of the ansatz functions in the quadrature points
@@ -1115,10 +1115,8 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
         fuVecDG[iD,iComp,iQ] = FeVecDG.phi[iD,iComp](Points[iQ,1],Points[iQ,2])
       end
     end
-    for iComp = 1 : FeTHDiv.Comp
-      for iD = 1 : FeHDiv.DoF
-        fuDivHDiv[iD,iComp,iQ] = FeHDiv.Divphi[iD,1](Points[iQ,1],Points[iQ,2])
-      end
+    for iD = 1 : FeHDiv.DoF
+      fuDivHDiv[iD,iQ] = FeHDiv.Divphi[iD,1](Points[iQ,1],Points[iQ,2])
     end
     for iComp = 1 : FeTHDiv.Comp
       for iD = 1 : FeVecDG.DoF
@@ -1152,26 +1150,30 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
     detDF = zeros(1)
     pinvDF = zeros(3,2)
     X = zeros(3)
-    detDFLoc = zeros(1)
     for iQ = 1 : NumQuad
       #Computation of Jacobi
       Jacobi!(DF,detDF,pinvDF,X,Grid.Type,Points[iQ,1],Points[iQ,2],Grid.Faces[iF], Grid)
-      detDFLoc[iQ] = detDF[1]
+      detDFLoc = detDF[1]
       @.uuVecDGLoc = 0.0
       #Computation of local variables in a quadrature point
       for iD = 1 : FeVecDG.DoF
         for iComp = 1 : FeTHDiv.Comp
-            uuVecDGLoc[iComp] += uVecDGLoc[iD] * fuVecDG[iD,iComp,iQ] #3x1
+            uuVecDGLoc[iD] += uVecDGLoc[iD] * fuVecDG[iD,iComp,iQ] #3x1
             @views @. uuGradVecDGLoc[iComp,:] += fuGradVecDG[iD,iComp,:,iQ] #3x2
         end
       end
       for iD = 1 : FeHDiv.DoF
+        uuDivHDivLoc += fuDivHDiv[iD,iQ] #1x1
         for iComp = 1 : FeTHDiv.Comp
-          uuHDivLoc[iComp] += uHDivLoc[iD] * fuHDiv[iD,iComp,iQ] #2x1
-          uuDivHDivLoc += fuDivHDiv[iD,iComp,iQ] #1x1
+            uuHDivLoc[iComp] += uHDivLoc[iD] * fuHDiv[iD,iComp,iQ] #2x1
         end
+        @show FeVecDG.DoF #3
+        @show FeHDiv.DoF #4
+        @show FeTHDiv.Comp #2
+        @show FeTHDiv.DoF #4
       end
       ###TESTBLOCK###
+      #=
       #size 3x1 uuVecDgLoc
       @show (uuVecDGLoc[1])
       @show (uuVecDGLoc[2])
@@ -1180,6 +1182,8 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
       #size 3x2 uuGradVecDGLoc
       @show (uuGradVecDGLoc[1,1])
       @show (uuGradVecDGLoc[1,2])
+      @show (uuGradVecDGLoc[2,2])
+      @show (uuGradVecDGLoc[3,2])
       @show (sizeof(uuGradVecDGLoc)) #48
       #size 2x1 uuHDivLoc
       @show (uuHDivLoc[1])
@@ -1187,22 +1191,39 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
       @show (sizeof(uuHDivLoc)) #16
       #size 1x1 uuDivHDivLoc
       @show uuDivHDivLoc,(sizeof(uuDivHDivLoc)) #8
-      ###TESTBLOCK###
+     ###TESTBLOCK###
+     =#
 
-      #transpose of the matrices
-      transuuVecDGLoc = zeros(1,3)
-      transuuGradVecDGLoc = zeros(2,3)
-      transuuHDivLoc = zeros(1,2)
+      #set all components together
+      tGradVecDGHDiv = zeros(1,3)
+      tVecDGDivHDiv = zeros(1,3)
+      GradVecDGHDiv = zeros(3,1)
+      inner = zeros(1,3)
+      
+      DFC = zeros(3,1)
+      orient = (1/detDFLoc) * Grid.Faces[iF].Orientation
 
-      transuuVecDGLoc = transpose(uuVecDGLoc)
-      transuuGradVecDGLoc = transpose(uuGradVecDGLoc)
-      transuuHDivLoc = transpose(uuHDivLoc)
+      #product
+      for iComp = 1 : FeTHDiv.Comp # 1:2
+          DFC = pinvDF * fuTHDiv[iComp,:,:]
+          for iD = 1 : FeVecDG.DoF # 1:3
+            @show FeVecDG.DoF
+              GradVecDGHDiv[iD,:] = ((uuGradVecDGLoc[iComp,:]) * (uuHDivLoc[iComp]))
+              tVecDGDivHDiv[:,iD] = ((uuVecDGLoc[iD])' * uuDivHDivLoc')
+          end
+      end
+      tGradVecDGHDiv = (GradVecDGHDiv)'
+      @show tGradVecDGHDiv
+      @show tVecDGDivHDiv
+      inner = tVecDGDivHDiv +tGradVecDGHDiv
+      @show inner, sizeof(inner)
+      test = orient *(inner * DFC)
+      
+      @show test
+      stop
       #Product incoming functions and test function
-      #First Test RhsLoc Bachelor Denise
       for iD = 1 : FeTHDiv.DoF
-        for iComp = 1 : FeTHDiv.Comp
-          RhsLoc[iD] +=  (1/detDFLoc[iD]) * Grid.Faces[iF].Orientation * (transuuHDivLoc[iComp] * transuuGradVecDGLoc[iComp,:]) + (transuuVecDGLoc[iComp] * uuDivHDivLoc) * pinvDF * fuTHDiv[iComp,:,:]
-        end
+          RhsLoc[iD] += orient * ( inner * DFC)
       end 
     end
     stop
