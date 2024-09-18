@@ -1098,7 +1098,7 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
   fuDivHDiv = zeros(FeHDiv.DoF,NumQuad)
   fuGradVecDG = zeros(FeVecDG.DoF,3,2,NumQuad)
 
-  #Computation of the ansatz functions in the quadrature points
+  #computation of the ansatz functions in the quadrature points
   for iQ = 1 : NumQuad
     for iComp = 1 : FeTHDiv.Comp
       for iD = 1 : FeTHDiv.DoF
@@ -1128,16 +1128,16 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
       fuGradVecDG[iD,3,2,iQ] = FeVecDG.Gradphi[iD,3,2](Points[iQ,1],Points[iQ,2])
     end
   end
-  #Local variables
+  #local variables
   uVecDGLoc = zeros(FeVecDG.DoF)
   uHDivLoc = zeros(FeHDiv.DoF)
-  RhsLoc = zeros(FeHDiv.DoF)
+  RhsLoc = zeros(FeTHDiv.DoF)
 
   uuVecDGLoc = zeros(3,1)
   uuGradVecDGLoc = zeros(3,2)
   uuHDivLoc = zeros(2,1)
   uuDivHDivLoc = 0.0
-  uufuTHDivLoc = zeros(2,1)
+
 
   DF = zeros(3,2)
   detDF = zeros(1)
@@ -1145,7 +1145,7 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
   X = zeros(3)
 
   for iF = 1 : Grid.NumFaces
-    #Copy from global variables to local variables  
+    #copy from global variables to local variables  
     for iD = 1 : FeVecDG.DoF
       ind = FeVecDG.Glob[iD,iF]  
       uVecDGLoc[iD] = uVecDG[ind]
@@ -1157,11 +1157,11 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
     @. RhsLoc = 0.0
 
     for iQ = 1 : NumQuad
-      #Computation of Jacobi
+      #computation of Jacobi
       Jacobi!(DF,detDF,pinvDF,X,Grid.Type,Points[iQ,1],Points[iQ,2],Grid.Faces[iF], Grid)
       detDFLoc = detDF[1]
       @.uuVecDGLoc = 0.0
-      #Computation of local variables in a quadrature point
+      #computation of local variables in a quadrature point
       for iD = 1 : FeVecDG.DoF
           uuVecDGLoc += uVecDGLoc[iD] * fuVecDG[iD,:,iQ] #3x1
           @views @. uuGradVecDGLoc[:,:] += fuGradVecDG[iD,:,:,iQ] #3x2
@@ -1171,38 +1171,29 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
           uuHDivLoc[1,1] += uHDivLoc[iD] * fuHDiv[iD,1,iQ]
           uuHDivLoc[2,1] += uHDivLoc[iD] * fuHDiv[iD,2,iQ]  #2x1
       end
-      for iD = 1 : FeVecDG.DoF
-        uufuTHDivLoc[1,1] += fuTHDiv[iD,1,iQ]
-        uufuTHDivLoc[2,1] += fuTHDiv[iD,1,iQ]
-      end 
+
       #set all components together
       tGradVecDGHDiv = zeros(1,3)
       tVecDGDivHDiv = zeros(1,3)
       GradVecDGHDiv = zeros(3,1)
       innersum = zeros(1,3)
-      DFC = rand(3,1)
 
-      orient = (1/detDFLoc) * Grid.Faces[iF].Orientation
-      @show size(uufuTHDivLoc), size(pinvDF)
-      DFC = pinvDF * uufuTHDivLoc
       #product
       GradVecDGHDiv = uuGradVecDGLoc * uuHDivLoc
       VecDGDivHDiv = uuDivHDivLoc * uuVecDGLoc
-      #transpose
-      tGradVecDGHDiv = (GradVecDGHDiv)'
-      tVecDGDivHDiv = (VecDGDivHDiv)'
-      #sum
-      innersum = tVecDGDivHDiv + tGradVecDGHDiv
-      @show size(innersum), size(DFC)
-      #Product incoming functions and test function
+     
+      #innersum
+      @. innersum = (1/detDFLoc) * Grid.Faces[iF].Orientation * ((VecDGDivHDiv)' + (GradVecDGHDiv)')
+  
+      #product incoming functions and test function
       for iD = 1 : FeTHDiv.DoF
-          RhsLoc[iD] += orient * (innersum * DFC)
+        test = innersum * (DF * reshape(fuTHDiv[iD,:,iQ],2))
+          RhsLoc[iD] += test[1]
       end 
     end
-    stop
-    #Save the new 
-    for iD = 1 : FeT.DoF
-      ind = FeT.Glob[iD,iF] 
+    #save the new 
+    for iD = 1 : FeTHDiv.DoF
+      ind = FeTHDiv.Glob[iD,iF] 
       Rhs[ind] += RhsLoc[iD]
     end  
   end  
