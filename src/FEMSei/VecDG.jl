@@ -38,7 +38,7 @@ function VecDG0Struct{FT}(::Grids.Quad,backend,Grid) where FT<:AbstractFloat
             Gradphi[i,j,2] = differentiate(phi[i,j],x2)
         end
     end
-      
+    @show Gradphi, size(Gradphi)
     Glob = KernelAbstractions.zeros(backend,Int,DoF,Grid.NumFaces)
     GlobCPU = zeros(Int,DoF,Grid.NumFaces)
     NumG = DoF * Grid.NumFaces
