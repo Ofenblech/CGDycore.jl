@@ -218,8 +218,8 @@ Rhs = zeros(FTB,RT.NumG)
 uHDiv = zeros(FTB,RT.NumG)
 uVecDG = zeros(FTB,VecDG.NumG)
 uDG = zeros(FTB,DG.NumG)
-FEMSei.DivMomentum!(backend,FTB,Rhs,uHDiv,RT,uVecDG,VecDG,RT,Grid,Grids.Quad(),nQuad,FEMSei.Jacobi!)
-#FEMSei.DivMomentum!(backend,FTB,Rhs,uHDiv,RT,uDG,DG,DG,Grid,Grids.Quad(),nQuad,FEMSei.Jacobi!)
+#FEMSei.DivMomentum!(backend,FTB,Rhs,uHDiv,RT,uVecDG,VecDG,RT,Grid,Grids.Quad(),nQuad,FEMSei.Jacobi!)
+FEMSei.DivMomentum2!(backend,FTB,Rhs,uHDiv,DG,uDG,DG,RT,Grid,Grids.Quad(),nQuad,FEMSei.Jacobi!)
   stop
 
 VelCa = zeros(Grid.NumFaces,Grid.Dim)

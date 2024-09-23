@@ -3,7 +3,8 @@ mutable struct DG0Struct{FT<:AbstractFloat,
   Glob::IT2
   DoF::Int
   Comp::Int                      
-  phi::Array{Polynomial,2}                       
+  phi::Array{Polynomial,2} 
+  Gradphi::Array{Polynomial,3}                           
   NumG::Int
   NumI::Int
   Type::Grids.ElementType
@@ -20,9 +21,15 @@ function DG0Struct{FT}(::Grids.Quad,backend,Grid) where FT<:AbstractFloat
   Comp = 1
   @polyvar x1 x2
   phi = Array{Polynomial,2}(undef,DoF,Comp)
+  Gradphi = Array{Polynomial,3}(undef,DoF,Comp,2)
+
   phi[1,1] = 1.0 + 0.0*x1 + 0.0*x2
-  
-    
+  for i = 1 : DoF
+    for j = 1 : Comp
+      Gradphi[i,j,1] = differentiate(phi[i,j],x1)
+      Gradphi[i,j,2] = differentiate(phi[i,j],x2)
+      end
+  end 
   Glob = KernelAbstractions.zeros(backend,Int,DoF,Grid.NumFaces)
   GlobCPU = zeros(Int,DoF,Grid.NumFaces)
   NumG = Grid.NumFaces
@@ -38,7 +45,8 @@ function DG0Struct{FT}(::Grids.Quad,backend,Grid) where FT<:AbstractFloat
     Glob,
     DoF,
     Comp,
-    phi,                      
+    phi,
+    Gradphi,                 
     NumG,
     NumI,
     Type,
