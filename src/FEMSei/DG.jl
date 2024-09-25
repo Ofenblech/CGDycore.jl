@@ -24,6 +24,7 @@ function DG0Struct{FT}(::Grids.Quad,backend,Grid) where FT<:AbstractFloat
   Gradphi = Array{Polynomial,3}(undef,DoF,Comp,2)
 
   phi[1,1] = 1.0 + 0.0*x1 + 0.0*x2
+  
   for i = 1 : DoF
     for j = 1 : Comp
       Gradphi[i,j,1] = differentiate(phi[i,j],x1)
@@ -120,6 +121,13 @@ function DG1Struct{FT}(::Grids.Quad,backend,Grid) where FT<:AbstractFloat
   
   for i = 1 : DoF
     Divphi[i,1] = differentiate(phi[i,1],x1) + differentiate(phi[i,2],x2)
+  end
+  Gradphi = Array{Polynomial,3}(undef,DoF,Comp,2)
+  for i = 1 : DoF
+      for j = 1 : Comp
+          Gradphi[i,j,1] = differentiate(phi[i,j],x1)
+          Gradphi[i,j,2] = differentiate(phi[i,j],x2)
+      end
   end
 
   Glob = KernelAbstractions.zeros(backend,Int,DoF,Grid.NumFaces)

@@ -72,6 +72,7 @@ function DivMatrix(backend,FTB,FeF::HDivConfElement,FeT::ScalarElement,Grid,Quad
     DivLoc .= 0
     for i = 1 : length(Weights)
       Jacobi!(DF,detDF,pinvDF,X,Grid.Type,Points[i,1],Points[i,2],Grid.Faces[iF], Grid)
+      @show detDF
       detDFLoc = detDF[1]
       DivLoc += Grid.Faces[iF].Orientation * Weights[i] * (fTRef[:,:,i]' * fFRef[:,:,i])
     end
@@ -1089,7 +1090,7 @@ function CrossRhs!(backend,FTB,Cross,q,qFeF::ScalarElement,u,uFeF::HDivElement,F
 end
 
 #vector field
-function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::VectorElement,FeTHDiv::HDivElement,Grid,
+function DivMomentumVector!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::VectorElement,FeTHDiv::HDivElement,Grid,
   ElemType::Grids.ElementType,QuadOrd,Jacobi)
 
   NumQuad, Weights, Points = QuadRule(ElemType,QuadOrd)
@@ -1145,6 +1146,7 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
   pinvDF = zeros(3,2)
   X = zeros(3)
 
+
   for iF = 1 : Grid.NumFaces
     #copy from global variables to local variables  
     for iD = 1 : FeVecDG.DoF
@@ -1174,8 +1176,6 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
       end
 
       #set all components together
-      tGradVecDGHDiv = zeros(1,3)
-      tVecDGDivHDiv = zeros(1,3)
       GradVecDGHDiv = zeros(3,1)
       innersum = zeros(1,3)
 
@@ -1200,21 +1200,26 @@ function DivMomentum!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uVecDG,FeVecDG::
   end  
 end
 
-#Scalar
-function DivMomentum2!(backend,FTB,Rhs,uHDiv,FeHDiv::ScalarElement,uDG,FeDG::ScalarElement,FeTHDiv::HDivElement,Grid,
+#Scalar DG0 variant
+function DivMomentumScalar!(backend,FTB,Rhs,uHDiv,FeHDiv::HDivElement,uDG,FeDG::ScalarElement,FeT::ScalarElement,Grid,
   ElemType::Grids.ElementType,QuadOrd,Jacobi)
-
   NumQuad, Weights, Points = QuadRule(ElemType,QuadOrd)
-  fuHDiv  = zeros(FeHDiv.DoF,FeHDiv.Comp,NumQuad)
-  @show size(fuHDiv)
-  fuTHDiv  = zeros(FeTHDiv.DoF,FeTHDiv.Comp,NumQuad)
-  fuGradDG = zeros(FeDG.DoF,1,2,NumQuad)
+  fuHDiv  = zeros(FeHDiv.DoF,FeHDiv.Comp,NumQuad) #4x1
+  fuDG  = zeros(FeDG.DoF,FeDG.DoF,NumQuad) #1x1
+  fuT  = zeros(FeT.DoF,FeT.Comp,NumQuad) #1x1
+  fuDivHDiv = zeros(FeHDiv.DoF,NumQuad) 
+  fuGradDG = zeros(FeDG.DoF,FeDG.DoF,2,NumQuad) #1x2
 
   #computation of the ansatz functions in the quadrature points
   for iQ = 1 : NumQuad
-    for iComp = 1 : FeTHDiv.Comp
-      for iD = 1 : FeTHDiv.DoF
-        fuTHDiv[iD,iComp,iQ] = FeTHDiv.phi[iD,iComp](Points[iQ,1],Points[iQ,2])
+    for iComp = 1 : FeT.Comp
+      for iD = 1 : FeT.DoF
+        fuT[iD,iComp,iQ] = FeT.phi[iD,iComp](Points[iQ,1],Points[iQ,2])
+      end
+    end
+    for iComp = 1 : FeT.Comp
+      for iD = 1 : FeHDiv.DoF
+        fuHDiv[iD,iComp,iQ] = FeHDiv.phi[iD,iComp](Points[iQ,1],Points[iQ,2])
       end
     end
     #bearb.
@@ -1222,52 +1227,104 @@ function DivMomentum2!(backend,FTB,Rhs,uHDiv,FeHDiv::ScalarElement,uDG,FeDG::Sca
       fuGradDG[iD,1,1,iQ] = FeDG.Gradphi[iD,1,1](Points[iQ,1],Points[iQ,2])
       fuGradDG[iD,1,2,iQ] = FeDG.Gradphi[iD,1,2](Points[iQ,1],Points[iQ,2])
     end
-  end
-  #local variables
-  uHDivLoc = zeros(FeHDiv.DoF)
-  RhsLoc = zeros(FeTHDiv.DoF)
 
-  uuGradDGLoc = zeros(1,2)
-  uuHDivLoc = zeros(1,1)
-
-  DF = zeros(3,2)
-  detDF = zeros(1)
-  pinvDF = zeros(3,2)
-  X = zeros(3)
-
-  for iF = 1 : Grid.NumFaces
-    #copy from global variables to local variables  
+    for iD = 1 : FeDG.DoF
+      fuDG[iD,1,iQ] = FeDG.phi[iD,1](Points[iQ,1],Points[iQ,2])
+    end
     for iD = 1 : FeHDiv.DoF
-      ind = FeHDiv.Glob[iD,iF]  
-      uHDivLoc[iD] = uHDiv[ind]
-    end  
-    @. RhsLoc = 0.0
+      fuDivHDiv[iD,iQ] = FeHDiv.Divphi[iD,1](Points[iQ,1],Points[iQ,2])
+    end
+    
+    for iD = 1 : FeDG.DoF
+      fuGradDG[iD,1,1,iQ] = FeDG.Gradphi[iD,1,1](Points[iQ,1],Points[iQ,2])
+      fuGradDG[iD,1,2,iQ] = FeDG.Gradphi[iD,1,2](Points[iQ,1],Points[iQ,2])
+    end
+  end
+
+  #local variables
+   #local variables
+   uDGLoc = zeros(FeDG.DoF)
+   uHDivLoc = zeros(FeHDiv.DoF)
+   RhsLoc = zeros(FeT.DoF)
+ 
+   uuDGLoc = zeros(1,1)
+   uuGradDGLoc = zeros(1,2)
+   uuHDivLoc = zeros(2,1)
+   uuDivHDivLoc = 0.0
+ 
+ 
+   DF = zeros(3,2)
+   detDF = zeros(1)
+   pinvDF = zeros(3,2)
+   X = zeros(3)
+ 
+   for iF = 1 : Grid.NumFaces
+     #copy from global variables to local variables  
+     for iD = 1 : FeDG.DoF
+       ind = FeDG.Glob[iD,iF]  
+       uDGLoc[iD] = uDG[ind]
+     end 
+     for iD = 1 : FeHDiv.DoF
+       ind = FeHDiv.Glob[iD,iF]  
+       uHDivLoc[iD] = uHDiv[ind]
+     end  
+     @. RhsLoc = 0.0
 
     for iQ = 1 : NumQuad
       #computation of Jacobi
       Jacobi!(DF,detDF,pinvDF,X,Grid.Type,Points[iQ,1],Points[iQ,2],Grid.Faces[iF], Grid)
       detDFLoc = detDF[1]
 
+      @.uuDGLoc = 0.0
       #computation of local variables in a quadrature point
       for iD = 1 : FeDG.DoF
-          @views @. uuGradDGLoc[:,:] += fuGradDG[iD,:,:,iQ] #1x2
+        uuDGLoc += uDGLoc[iD] * fuDG[iD,:,iQ] #1x1
+        @views @. uuGradDGLoc[:,:] += fuGradDG[iD,:,:,iQ] #1x2
       end
       for iD = 1 : FeHDiv.DoF
-          uuHDivLoc[1,1] += uHDivLoc[iD] * fuHDiv[iD,1,iQ]  #1x1
+        uuDivHDivLoc += fuDivHDiv[iD,iQ] #1x1
+        uuHDivLoc[1,1] += uHDivLoc[iD] * fuHDiv[iD,1,iQ]
+        uuHDivLoc[2,1] += uHDivLoc[iD] * fuHDiv[iD,2,iQ]  #2x1
       end
-      
-     
-      #product incoming functions and test function
-      for iD = 1 : FeTHDiv.DoF
-          product = (abs(detDFLoc)/detDFLoc) * Grid.Faces[iF].Orientation * (uHDivLoc * uuGradDGLoc) * reshape(fuTHDiv[iD,:,iQ],2)
-          RhsLoc[iD] += product[1]
-      end 
-    end
+     #set all components together
+     GradDGHDiv = zeros(1,1)
+     innersum = zeros(1,1)
+     DGDivHDiv = zeros(1,1)
+     #product
+     GradDGHDiv = uuGradDGLoc * uuHDivLoc
+     DGDivHDiv = uuDivHDivLoc * uuDGLoc
     
+     #innersum
+     @. innersum = (1/detDFLoc) * Grid.Faces[iF].Orientation * (DGDivHDiv + GradDGHDiv)
+     #product incoming functions and test function
+     for iD = 1 : FeT.DoF
+       product = innersum * reshape(fuT[iD,:,iQ],1)
+       RhsLoc[iD] += product[1]
+     end 
+   end
+
     #save the new 
-    for iD = 1 : FeTHDiv.DoF
-      ind = FeTHDiv.Glob[iD,iF] 
+    for iD = 1 : FeT.DoF
+      ind = FeT.Glob[iD,iF] 
       Rhs[ind] += RhsLoc[iD]
     end  
-  end  
+  end 
+  stop
+  #Edges
+  #local variables
+  gamma = zeros(1)
+  DFE = zeros(3,2)
+  detDFE = zeros(1)
+  pinvDFE = zeros(3,2)
+  X = zeros(3)
+
+
+  for iE = 1 : Grid.NumEdges
+    for iQ = 1 : NumQuad
+      #computation of Jacobi Edges
+      Jacobi!(DF,detDFE,pinvDFE,X,Grid.Type,Points[iQ,1],Points[iQ,2],Grid.Edges[iE], Grid)
+      detDFELoc = detDFE[1]
+    end
+  end
+
 end
