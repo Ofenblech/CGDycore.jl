@@ -103,7 +103,7 @@ withenv("GKSwstype" => "nul") do
 end
 
 Documenter.deploydocs(
-    repo = "github.com/CliMA/ClimaCore.jl.git",
+    repo = "github.com/Ofenblech/CGDycore.jl",
     target = "build",
     push_preview = true,
     devbranch = "main",
