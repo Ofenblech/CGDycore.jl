@@ -151,8 +151,8 @@ nLon = 0
 LatB = 0.0
 
 #Quad
-#GridType = "CubedSphere"
-GridType = "TriangularSphere"
+GridType = "CubedSphere"
+#GridType = "TriangularSphere"
 nPanel =  90
 #GridType = "HealPix"
 ns = 57
@@ -176,9 +176,9 @@ if  a == 1
     dtau = GridLengthMin / cS / sqrt(2) * .2
     EndTime = 24 * 3600 * 6# One day
     PrintTime = 3600
-    nAdveVel = round(EndTime / dtau)
+    nAdveVel = 10 #round(EndTime / dtau)
     dtau = EndTime / nAdveVel
-    nprint = ceil(PrintTime/dtau)
+    nprint = 1 #ceil(PrintTime/dtau)
     GridTypeOut = GridType*"NonLinShallowGal"
     @show GridLengthMin,GridLengthMax
     @show nAdveVel
@@ -192,9 +192,9 @@ elseif  a == 2
     dtau = GridLengthMin / cS / sqrt(2) * .3 
     EndTime = 24 * 3600 # One day
     PrintTime = 3600
-    nAdveVel = round(EndTime / dtau)
+    nAdveVel = 10 #round(EndTime / dtau)
     dtau = EndTime / nAdveVel
-    nprint = ceil(PrintTime/dtau)
+    nprint = 1 #ceil(PrintTime/dtau)
     GridTypeOut = GridType*"NonLinShallowHaurwitz"
     @show GridLengthMin,GridLengthMax
     @show nAdveVel
@@ -203,13 +203,13 @@ elseif  a == 2
 else 
     print("Error")
 end
-Examples.InitialProfile!(Model,Problem,Param,Phys)
+Examples.InitialProfile!(backend,FTB,Model,Problem,Param,Phys)
 
 #Output
 vtkSkeletonMesh = Outputs.vtkStruct{Float64}(backend,Grid,Grid.NumFaces,Flat)
 
 #Finite elements
-k = 1
+k = 0
 DG = FEMSei.DGStruct{FTB}(backend,k,Grid.Type,Grid)
 VecDG = FEMSei.VecDGStruct{FTB}(backend,k,Grid.Type,Grid)
 RT = FEMSei.RTStruct{FTB}(backend,k,Grid.Type,Grid)
@@ -244,7 +244,6 @@ uRec = zeros(FTB,VecDG.NumG)
 cName = ["h";"uS";"vS"]
 
 FEMSei.InterpolateRT!(Uhu,RT,FEMSei.Jacobi!,Grid,Grid.Type,nQuad,Model.InitialProfile)
-#FEMSei.InterpolateCons!(backend,FTB,Uhu,RT,Grid,nQuad,FEMSei.Jacobi!,Model.InitialProfile)
 FEMSei.Project!(backend,FTB,Uh,DG,Grid,nQuad,FEMSei.Jacobi!,Model.InitialProfile)
 # Output of the initial values
 FileNumber=0
@@ -275,9 +274,11 @@ for i = 1 : nAdveVel
   FEMSei.DivRhs!(backend,FTB,Fh,DG,UNewhu,RT,Grid,Grid.Type,nQuad,FEMSei.Jacobi!)
   ldiv!(DG.LUM,Fh)
   # Tendency hu
+  #FileNumber+=1
   FEMSei.InterpolateScalarHDivVecDG!(backend,FTB,uRec,VecDG,UNewh,DG,UNewhu,RT,Grid,
     Grid.Type,nQuad,FEMSei.Jacobi!)
   #FEMSei.ConvertVelocitySp!(backend,FTB,VelSp,uRec,VecDG,Grid,FEMSei.Jacobi!)
+  #FEMSei.ConvertScalar!(backend,FTB,hout,UNewh,DG,Grid,FEMSei.Jacobi!)
   #Outputs.vtkSkeleton!(vtkSkeletonMesh, GridTypeOut, Proc, ProcNumber, [hout VelSp] ,FileNumber,cName)
   #stop
 
@@ -299,12 +300,8 @@ for i = 1 : nAdveVel
   FEMSei.GradHeightSquared!(backend,FTB,Fhu,RT,UNewh,DG,Grid,Grid.Type,nQuad,FEMSei.Jacobi!)
   ldiv!(RT.LUM,Fhu)
   @. U = U + dtau * F
-  #=
-  # Vorticity
-  FEMSei.CurlMatrix!(backend, FTB, Curl, RT, Grid, Grid.Type, nQuad, FEMSei.Jacobi!)
-  FEMSei.ProjectHDivHCurl!(backend, FTB, uCurl, Curl, UNewhu, RT, Grid, Grid.Type, nQuad, FEMSei.Jacobi!)
-  ldiv!(RT.LUM, uCurl)
-  =#
+
+    
   # Output
   if mod(i,nprint) == 0 
     global FileNumber += 1
@@ -314,3 +311,4 @@ for i = 1 : nAdveVel
   end
 end
 @show "finished"
+
